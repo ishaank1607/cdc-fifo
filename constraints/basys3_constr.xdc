@@ -13,6 +13,6 @@ set_property CONFIG_VOLTAGE 3.3 [current_design]
 
 # the two MMCM outputs are unrelated for CDC purposes
 set_clock_groups -asynchronous \
-    -group [get_clocks clk_out1_clk_wiz_0] \
-    -group [get_clocks clk_out2_clk_wiz_0]
+    -group [get_clocks clk_out1_clk_wiz_0*] \
+    -group [get_clocks clk_out2_clk_wiz_0*]
 set_false_path -from [get_ports {btnC sw[*]}]
