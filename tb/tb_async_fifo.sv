@@ -59,26 +59,71 @@ initial begin
     end
 end
 
+task automatic check(input bit cond, input string msg);
+   if (!cond) begin
+       $error(msg);
+       error_count = error_count + 1;
+   end
+endtask
+
+task automatic run_traffic(input int wp, input int rp, input int cycles);
+    write_prob <= wp;
+    read_prob <= rp;
+    repeat (cycles) @(posedge wclk);
+endtask
+
+task automatic drain();
+    write_prob <= 0;
+    read_prob <= 100;
+    repeat (300) begin
+        @(posedge rclk);
+        if (expected_q.size() == 0) break;
+    end
+    repeat (10) @(posedge rclk);
+endtask
+
 initial begin
+    int snap;
     wrst_n = 0;
     rrst_n = 0;
     winc = 0;
     rinc = 0;
     wdata = 0;
-    #50;
+    #40;
+    check(rempty === 1'b1 && wfull === 1'b0, "flags must be empty/not-full while reset is asserted");
+    #10;
     wrst_n = 1;
     rrst_n = 1;
     #100;
     if (rempty !== 1'b1 || wfull !== 1'b0) begin
-        $error("ERROR: FIFO should be empty after reset");
+        check(rempty === 1'b1 && wfull === 1'b0, "FIFO should be empty after reset");
     end
     else begin
         $display("PASS: FIFO is empty after reset, all OK");
     end
-    write_prob = 50;
-    read_prob  = 50;
-    #10000;
-    $display("Simulation finished, writes accepted: %0d, reads accepted: %0d, full hits: %0d, empty hits: %0d, errors: %0d", writes_accepted, reads_accepted, full_hits, empty_hits, error_count);
+    $display("--- Phase 1: fill ---");
+    snap = writes_accepted;
+    run_traffic(100, 0, 40);
+    @(negedge wclk);
+        check(writes_accepted - snap == 2**ADDR_W, "fill should accept exactly 16 writes");
+        check(wfull === 1'b1, "wfull should be high when full");
+        check(expected_q.size() == 2**ADDR_W, "queue should hold 16 entries");
+        check(full_hits > 0, "should have seen blocked writes while full");
+    $display("--- Phase 2: drain ---");
+    drain();
+    check(rempty === 1'b1, "rempty should be high after draining");
+    check(expected_q.size() == 0, "queue should be empty after draining");
+    run_traffic(50, 50, 1000);
+    drain();
+    check(rempty === 1'b1, "rempty should be high after draining");
+    check(expected_q.size() == 0, "queue should be empty after draining");
+    $display("writes accepted: %0d, reads accepted: %0d, full hits: %0d, empty hits: %0d, errors: %0d",
+         writes_accepted, reads_accepted, full_hits, empty_hits, error_count);
+    if (error_count == 0) begin
+        $display("PASS");
+    end else begin
+        $display("FAIL: FIFO test completed with %0d errors", error_count);
+    end
     $finish;
 end
 
