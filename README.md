@@ -16,7 +16,7 @@ Wizard (MMCM), to make two independent clocks for the board demo.
 | Clock-ratio sweep and reset in the middle of operation | Not done |
 | Board demo (100 MHz writer, 37 MHz reader, LFSR check) | Built and run; error LED stayed off, full and empty both seen |
 | Timing (both clocks declared asynchronous) | Met |
-| `report_cdc` | 0 unsafe, 0 missing `ASYNC_REG`, 1 endpoint reported Unknown (waiver added, see below) |
+| `report_cdc` | 0 unsafe, 0 unknown, 0 missing `ASYNC_REG`; 1 endpoint (memory read path) waived with a documented reason |
 | Frequency counter (`freq_count`) | Written, not verified (no testbench yet) |
 
 ## FIFO design
@@ -152,16 +152,22 @@ wildcard fixed it.
 ### CDC report
 
 `report_cdc` finds 12 endpoints between the two clocks: 11 safe, 0 unsafe, 0 without `ASYNC_REG`, and one
-reported Unknown (CDC-1). The Unknown one is the FIFO memory read path, from the RAM written in the write
-clock domain into the read-domain error check (`u_fifo/mem_reg_0_15_0_5/RAMC_D1/CLK` to `err_reg/CE`).
-It is safe by protocol: `rempty` only deasserts after the write pointer has crossed two synchronizer
-stages, so the entry has been stable for at least two read-clock cycles before it is read, and an entry is
-not overwritten until the read pointer has crossed back. Vivado can't prove that, so it reports the path
-as Unknown. I added a waiver for it in the constraints file, and I have not re-run the reports since to
-confirm it clears.
+that Vivado could not classify (CDC-1), which I reviewed and waived. In the re-run after adding the waiver
+the report shows CDC-1 as waived (1 endpoint) and nothing left Unknown: 6 safe endpoints from
+`clk_out1` to `clk_out2`, 5 safe from `clk_out2` to `clk_out1`, and the button and switch inputs as
+false paths.
 
-Other methodology warnings still open: no output delay on the LED outputs, a LUT driving an asynchronous
-reset (`~btnC & locked`), and auto-derived clocks referenced by the clock-group constraint.
+The waived endpoint is the FIFO memory read path, from the RAM written in the write clock domain into
+the read-domain error check (`u_fifo/mem_reg_0_15_0_5/RAMC_D1/CLK` to `err_reg/CE`). It is safe by
+protocol: `rempty` only deasserts after the write pointer has crossed two synchronizer stages, so the
+entry has been stable for at least two read-clock cycles before it is read, and an entry is not
+overwritten until the read pointer has crossed back. Vivado can't prove that protocol argument, so it
+reported the path as Unknown. The waiver is in `constraints/basys3_constr.xdc` with that reasoning in its
+description.
+
+I also added a false path for the LED outputs. I have not re-run `report_methodology` since, so I can't
+say which of the earlier warnings are cleared. The ones I expect to remain are a LUT driving an
+asynchronous reset (`~btnC & locked`) and auto-derived clocks referenced by the clock-group constraint.
 
 ## Running the simulation
 
@@ -190,6 +196,5 @@ came up.
 
 - Clock-ratio sweep and reset-in-the-middle tests
 - A testbench for `freq_count`
-- Re-run the CDC and timing reports with the waiver, and add an output-delay or false-path constraint
-  for the LEDs
+- Re-run `report_methodology` to see which warnings remain after the LED false path
 - A recorded long-duration run on the board
